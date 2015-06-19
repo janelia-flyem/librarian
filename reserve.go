@@ -147,11 +147,14 @@ func parseLogLine(line string) (*libraryOp, error) {
 	var timeStr, uuid, opStr, client string
 	var label uint64
 	n, err := fmt.Sscanf(line, "%s %s %s %d %s", &timeStr, &uuid, &opStr, &label, &client)
+	if err != nil {
+		return nil, fmt.Errorf("could not parse log line %q: %v", line, err)
+	}
 	if n != 5 {
 		return nil, fmt.Errorf("could not parse log line %q", line)
 	}
 
-	op := &libraryT{
+	op := &libraryOp{
 		op:     opTypeFromString(opStr),
 		uuid:   uuid,
 		label:  label,
@@ -173,7 +176,7 @@ func checkout(uuid string, label uint64, clientid string, modifyLog bool) error 
 				return fmt.Errorf("uuid %s, label %d - already checked out by %s", uuid, label, client)
 			}
 		} else {
-			client[label] = clientid
+			checkouts[label] = clientid
 		}
 	} else {
 		checkouts = make(map[uint64]string, 100)
@@ -183,7 +186,7 @@ func checkout(uuid string, label uint64, clientid string, modifyLog bool) error 
 
 	// Append to log
 	if modifyLog {
-		op := libraryOp{
+		op := &libraryOp{
 			op:     CheckoutOp,
 			uuid:   uuid,
 			label:  label,
@@ -191,13 +194,14 @@ func checkout(uuid string, label uint64, clientid string, modifyLog bool) error 
 		}
 		library.write(op)
 	}
+	return nil
 }
 
 func getCheckout(uuid string, label uint64) (client string, found bool) {
 	library.RLock()
 	defer library.RUnlock()
 
-	checkouts, uuidFound = library.vchk[uuid]
+	checkouts, uuidFound := library.vchk[uuid]
 	if uuidFound {
 		client, found = checkouts[label]
 	} else {
@@ -233,7 +237,7 @@ func checkin(uuid string, label uint64, clientid string, modifyLog bool) error {
 
 	// Append to log
 	if modifyLog {
-		op := libraryOp{
+		op := &libraryOp{
 			op:     CheckinOp,
 			uuid:   uuid,
 			label:  label,
@@ -241,6 +245,7 @@ func checkin(uuid string, label uint64, clientid string, modifyLog bool) error {
 		}
 		library.write(op)
 	}
+	return nil
 }
 
 func reset(uuid string, modifyLog bool) error {
@@ -252,11 +257,12 @@ func reset(uuid string, modifyLog bool) error {
 
 	// Append to log
 	if modifyLog {
-		op := libraryOp{
+		op := &libraryOp{
 			op:     ResetOp,
 			uuid:   uuid,
 			client: "n/a",
 		}
 		library.write(op)
 	}
+	return nil
 }

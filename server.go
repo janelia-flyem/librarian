@@ -12,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/janelia-flyem/dvid/server"
 	"github.com/zenazn/goji/graceful"
 	"github.com/zenazn/goji/web"
 	"github.com/zenazn/goji/web/middleware"
@@ -63,6 +62,8 @@ const WebHelp = `
 		{ "Label": 2019, "Client": "zhaot" },
 		...
 	]
+
+	If no checkouts are present for UUID, returns the empty list "[]".
 
  PUT  /checkout/{UUID}
 
@@ -129,6 +130,8 @@ const (
 
 	// ReadTimeout is the maximum time in seconds DVID will wait to read data from HTTP connection.
 	ReadTimeout = 5 * time.Second
+
+	DefaultWebAddress = "localhost:8000"
 )
 
 type WebMux struct {
@@ -159,11 +162,7 @@ func ServeSingleHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func serveHttp(address string) {
-	var mode string
-	if readonly {
-		mode = " (read-only mode)"
-	}
-	log.Infof("Librarian server listening at %s%s ...\n", address, mode)
+	log.Printf("Librarian server listening at %s ...\n", address)
 	if !webMux.routesSetup {
 		initRoutes()
 	}
@@ -174,7 +173,7 @@ func serveHttp(address string) {
 
 	graceful.HandleSignals()
 	if err := graceful.ListenAndServe(address, http.DefaultServeMux); err != nil {
-		log.Fatal(err)
+		log.Printf("CRITICAL: %v\n", err)
 	}
 	graceful.Wait()
 }
@@ -218,7 +217,7 @@ func recoverHandler(c *web.C, h http.Handler) http.Handler {
 				stackTrace := string(buf[0:size])
 				message := fmt.Sprintf("Panic detected on request %s:\n%+v\nIP: %v, URL: %s\nStack trace:\n%s\n",
 					reqID, err, r.RemoteAddr, r.URL.Path, stackTrace)
-				log.Criticalf("%s\n", message)
+				log.Printf("CRITICAL: %s\n", message)
 				http.Error(w, http.StatusText(500), 500)
 			}
 		}()
@@ -230,7 +229,7 @@ func recoverHandler(c *web.C, h http.Handler) http.Handler {
 
 func NotFound(w http.ResponseWriter, r *http.Request) {
 	errorMsg := fmt.Sprintf("Could not find the URL: %s", r.URL.Path)
-	log.Infof(errorMsg)
+	log.Printf("INFO: %s\n", errorMsg)
 	http.Error(w, errorMsg, http.StatusNotFound)
 }
 
@@ -239,7 +238,7 @@ func BadRequest(w http.ResponseWriter, r *http.Request, message string, args ...
 		message = fmt.Sprintf(message, args...)
 	}
 	errorMsg := fmt.Sprintf("%s (%s).", message, r.URL.Path)
-	log.Errorf(errorMsg)
+	log.Printf("ERROR: %s\n", errorMsg)
 	http.Error(w, errorMsg, http.StatusBadRequest)
 }
 
@@ -270,9 +269,10 @@ func helpHandler(w http.ResponseWriter, r *http.Request) {
 func getCheckoutHandler(c web.C, w http.ResponseWriter, r *http.Request) {
 	uuid := c.URLParams["uuid"]
 
-	checkouts, err := getCheckouts(uuid)
-	if err != nil {
-		BadRequest(w, r, "couldn't get checkouts for uuid %s: %v", uuid, err)
+	w.Header().Set("Content-Type", "application/json")
+	checkouts, found := getCheckouts(uuid)
+	if !found {
+		fmt.Fprintf(w, "[]")
 		return
 	}
 
@@ -282,31 +282,25 @@ func getCheckoutHandler(c web.C, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprintf(w, string(jsonBytes))
 }
 
 func putCheckoutHandler(c web.C, w http.ResponseWriter, r *http.Request) {
 	uuid := c.URLParams["uuid"]
 
-	client, found := getCheckout(uuid, label)
-	if !found {
-		BadRequest(w, r, "no checkout for uuid %s, label %d exists", uuid, label)
-		return
-	}
 	data, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		server.BadRequest(w, r, "bad POSTed data for checkout: %v", err)
+		BadRequest(w, r, "bad POSTed data for checkout: %v", err)
 		return
 	}
 	var reservation reserveJSON
 	if err := json.Unmarshal(data, &reservation); err != nil {
-		server.BadRequest(w, r, "bad checkout JSON: %v", err)
+		BadRequest(w, r, "bad checkout JSON: %v", err)
 		return
 	}
 	if err := checkout(uuid, reservation.Label, reservation.Client, true); err != nil {
 		errorMsg := fmt.Sprintf("could not do checkout: %v (%s).", err, r.URL.Path)
-		log.Errorf(errorMsg)
+		log.Printf("ERROR: %s\n", errorMsg)
 		http.Error(w, errorMsg, http.StatusConflict)
 	}
 }
