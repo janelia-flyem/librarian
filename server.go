@@ -195,10 +195,15 @@ func initRoutes() {
 	mainMux.Use(corsHandler)
 
 	mainMux.Put("/checkin/:uuid/:label/:client", putCheckinHandler)
+	mainMux.Put("/checkin/:uuid/:label/:client/", putCheckinHandler)
 	mainMux.Get("/checkout/:uuid/:label", getCheckoutClientHandler)
+	mainMux.Get("/checkout/:uuid/:label/", getCheckoutClientHandler)
 	mainMux.Put("/reset/:uuid", resetHandler)
+	mainMux.Put("/reset/:uuid/", resetHandler)
 	mainMux.Put("/checkout/:uuid", putCheckoutHandler)
+	mainMux.Put("/checkout/:uuid/", putCheckoutHandler)
 	mainMux.Get("/checkout/:uuid", getCheckoutHandler)
+	mainMux.Get("/checkout/:uuid/", getCheckoutHandler)
 	mainMux.Get("/", helpHandler)
 	mainMux.Get("/*", NotFound)
 

@@ -93,6 +93,9 @@ func (lib *libraryT) write(op *libraryOp) error {
 	if _, err := lib.w.WriteString(line); err != nil {
 		return err
 	}
+	if err := lib.w.Flush(); err != nil {
+		return err
+	}
 	return nil
 }
 
