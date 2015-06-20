@@ -256,6 +256,20 @@ func checkout(uuid string, label uint64, clientid string, modifyLog bool) error 
 	return nil
 }
 
+func getUUIDs() (string, error) {
+	library.RLock()
+	defer library.RUnlock()
+
+	uuids := make([]string, len(library.vchk))
+	i := 0
+	for uuid := range library.vchk {
+		uuids[i] = uuid
+		i++
+	}
+	jsonBytes, err := json.Marshal(uuids)
+	return string(jsonBytes), err
+}
+
 func getCheckout(uuid string, label uint64) (client string, found bool) {
 	library.RLock()
 	defer library.RUnlock()

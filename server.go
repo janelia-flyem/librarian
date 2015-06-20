@@ -48,11 +48,17 @@ const WebHelp = `
 		<h3>HTTP API</h3>
 
 <pre>
- GET  /
+GET  /
 
 	The current help page.
 
- GET  /state/{UUID}
+GET  /uuids
+
+	Returns JSON of the UUIDS that have reserved labels:
+
+	[ "3af902", "d944bc", ... ]
+
+GET  /state/{UUID}
 
 	Returns JSON describing all reserved labels for the given UUID:
 
@@ -64,7 +70,7 @@ const WebHelp = `
 
 	If no checkouts are present for UUID, returns the empty list "[]".
 
-  GET  /history/{UUID}
+GET  /history/{UUID}
 
  	Returns a list of all operations done on this UUID in the following JSON format:
 
@@ -220,6 +226,10 @@ func initRoutes() {
 
 	mainMux.Get("/state/:uuid", stateHandler)
 	mainMux.Get("/state/:uuid/", stateHandler)
+
+	mainMux.Get("/uuids", uuidsHandler)
+	mainMux.Get("/uuids/", uuidsHandler)
+
 	mainMux.Get("/", helpHandler)
 	mainMux.Get("/*", NotFound)
 
@@ -285,6 +295,16 @@ func helpHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Return the embedded help page.
 	fmt.Fprintf(w, fmt.Sprintf(WebHelp, hostname))
+}
+
+func uuidsHandler(w http.ResponseWriter, r *http.Request) {
+	jsonStr, err := getUUIDs()
+	if err != nil {
+		BadRequest(w, r, "error marshaling JSON: %v", err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, jsonStr)
 }
 
 func stateHandler(c web.C, w http.ResponseWriter, r *http.Request) {
