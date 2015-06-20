@@ -50,6 +50,7 @@ const (
 )
 
 type libraryOp struct {
+	t      time.Time
 	op     opType
 	uuid   string
 	label  uint64
@@ -76,8 +77,10 @@ func (c checkoutsT) MarshalJSON() ([]byte, error) {
 // map of UUID -> checkouts
 type libraryT struct {
 	sync.RWMutex
-	vchk map[string]checkoutsT
-	w    *bufio.Writer // Append-only log writer
+
+	vchk  map[string]checkoutsT
+	fname string
+	w     *bufio.Writer // Append-only log writer
 }
 
 var (
@@ -101,6 +104,7 @@ func (lib *libraryT) write(op *libraryOp) error {
 
 // This is the only time we read from log file, then rest of time we write.
 func initLibrary(fname string) error {
+	library.fname = fname
 	library.vchk = make(map[string]checkoutsT, 100)
 
 	// Read-only mode
@@ -156,14 +160,66 @@ func parseLogLine(line string) (*libraryOp, error) {
 	if n != 5 {
 		return nil, fmt.Errorf("could not parse log line %q", line)
 	}
-
+	var t time.Time
+	if err := t.UnmarshalText([]byte(timeStr)); err != nil {
+		return nil, err
+	}
 	op := &libraryOp{
+		t:      t,
 		op:     opTypeFromString(opStr),
 		uuid:   uuid,
 		label:  label,
 		client: client,
 	}
 	return op, nil
+}
+
+// Writes JSON of history for a UUID into a writer.
+func writeHx(uuid string, w io.Writer) error {
+	// Read-only mode
+	f, err := os.OpenFile(library.fname, os.O_RDONLY, 0664)
+	if err != nil {
+		return fmt.Errorf("cannot open librarian log file: %v", err)
+	}
+	defer f.Close()
+	r := bufio.NewReader(f)
+
+	// Load every entry in, populating our library of reserved labels.
+	fmt.Fprintf(w, "[\n")
+	first := true
+	for {
+		line, err := r.ReadString('\n')
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		op, err := parseLogLine(line)
+		if err != nil {
+			return err
+		}
+		if op.uuid == uuid {
+			tbytes, err := op.t.MarshalText()
+			if err != nil {
+				return err
+			}
+			if first {
+				fmt.Fprintf(w, "\n  {")
+			} else {
+				fmt.Fprintf(w, ",\n  {")
+			}
+			fmt.Fprintf(w, `"Time":%q, "Op":%q`, string(tbytes), op.op)
+			switch op.op {
+			case CheckoutOp, CheckinOp:
+				fmt.Fprintf(w, `, "Label":%d, "Client":%q`, op.label, op.client)
+			}
+			fmt.Fprintf(w, "}")
+			first = false
+		}
+	}
+	fmt.Fprintf(w, "]\n")
+	return nil
 }
 
 func checkout(uuid string, label uint64, clientid string, modifyLog bool) error {
@@ -230,6 +286,9 @@ func checkin(uuid string, label uint64, clientid string, modifyLog bool) error {
 	if found {
 		client, labelUsed := checkouts[label]
 		if labelUsed {
+			if client != clientid {
+				return fmt.Errorf("uuid %s, label %d checked out to %s, not %s so cannot checkin", uuid, label, client, clientid)
+			}
 			delete(library.vchk[uuid], label)
 		} else {
 			return fmt.Errorf("uuid %s, label %d has not been checked out so can't be checked in by %s", uuid, label, client)

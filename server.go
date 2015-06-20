@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -53,7 +52,7 @@ const WebHelp = `
 
 	The current help page.
 
- GET  /checkout/{UUID}
+ GET  /state/{UUID}
 
 	Returns JSON describing all reserved labels for the given UUID:
 
@@ -65,19 +64,24 @@ const WebHelp = `
 
 	If no checkouts are present for UUID, returns the empty list "[]".
 
- PUT  /checkout/{UUID}
+  GET  /history/{UUID}
 
- 	Reserves a label for the given UUID for a given client id.  The PUT request must be JSON with 
- 	"Label" and "Client" fields:
+ 	Returns a list of all operations done on this UUID in the following JSON format:
 
- 	{
- 		"Label": 34890,
- 		"Client": "katzw"
- 	}
+ 	[
+ 		{ "Time": "2015-12-19T16:39:57-08:00", "Op": "checkout", "Label": 2310, "Client": "katzw"},
+ 		{ "Time": "2015-12-19T16:40:07-08:00", "Op": "checkout", "Label": 1029, "Client": "plazas"},
+ 		{ "Time": "2015-12-19T16:49:10-08:00", "Op": "checkin", "Label": 1029, "Client": "plazas"},
+ 		{ "Time": "2015-12-19T16:56:01-08:00", "Op": "checkin", "Label": 2310, "Client": "katzw"},
+ 		{ "Time": "2015-12-19T16:57:07-08:00", "Op": "checkout", "Label": 1029, "Client": "rivlinp"},
+ 		{ "Time": "2015-12-19T17:10:28-08:00", "Op": "reset"},
+ 	]
 
- 	If that label is available for that client, a 200 is returned.  If not, a status 409 (Conflict) is returned.
+ 	Time: RFC-3339 format.
+ 	Op: one of "checkout", "checkin", and "reset"
+ 	Label: uint64 of the label id.
 
- GET  /checkout/{UUID}/{Label}
+GET  /checkout/{UUID}/{Label}
 
 	Returns JSON for any client that has reserved the given label for the UUID:
 
@@ -88,7 +92,12 @@ const WebHelp = `
 
 	If not client has reserved that label, an empty JSON object "{}" is returned.
 
- PUT  /checkin/{UUID}/{Label}/{Client}
+PUT  /checkout/{UUID}/{Label}/{Client}
+
+ 	Reserves a label for the given UUID for a given client id.   If that label is available for that client, 
+ 	a 200 is returned.  If not, a status 409 (Conflict) is returned.
+
+PUT  /checkin/{UUID}/{Label}/{Client}
 
 	Checks back in the given label/uuid.  The client id must match the id used to checkout the label.
 	If either the client id is incorrect or the given label/uuid was never checked out, a 400 status is returned.
@@ -196,14 +205,21 @@ func initRoutes() {
 
 	mainMux.Put("/checkin/:uuid/:label/:client", putCheckinHandler)
 	mainMux.Put("/checkin/:uuid/:label/:client/", putCheckinHandler)
+
+	mainMux.Put("/checkout/:uuid/:label/:client", putCheckoutHandler)
+	mainMux.Put("/checkout/:uuid/:label/:client/", putCheckoutHandler)
+
 	mainMux.Get("/checkout/:uuid/:label", getCheckoutClientHandler)
 	mainMux.Get("/checkout/:uuid/:label/", getCheckoutClientHandler)
+
 	mainMux.Put("/reset/:uuid", resetHandler)
 	mainMux.Put("/reset/:uuid/", resetHandler)
-	mainMux.Put("/checkout/:uuid", putCheckoutHandler)
-	mainMux.Put("/checkout/:uuid/", putCheckoutHandler)
-	mainMux.Get("/checkout/:uuid", getCheckoutHandler)
-	mainMux.Get("/checkout/:uuid/", getCheckoutHandler)
+
+	mainMux.Get("/history/:uuid", historyHandler)
+	mainMux.Get("/history/:uuid/", historyHandler)
+
+	mainMux.Get("/state/:uuid", stateHandler)
+	mainMux.Get("/state/:uuid/", stateHandler)
 	mainMux.Get("/", helpHandler)
 	mainMux.Get("/*", NotFound)
 
@@ -271,7 +287,7 @@ func helpHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, fmt.Sprintf(WebHelp, hostname))
 }
 
-func getCheckoutHandler(c web.C, w http.ResponseWriter, r *http.Request) {
+func stateHandler(c web.C, w http.ResponseWriter, r *http.Request) {
 	uuid := c.URLParams["uuid"]
 
 	w.Header().Set("Content-Type", "application/json")
@@ -290,31 +306,36 @@ func getCheckoutHandler(c web.C, w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, string(jsonBytes))
 }
 
-func putCheckoutHandler(c web.C, w http.ResponseWriter, r *http.Request) {
-	uuid := c.URLParams["uuid"]
-
-	data, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		BadRequest(w, r, "bad POSTed data for checkout: %v", err)
-		return
-	}
-	var reservation reserveJSON
-	if err := json.Unmarshal(data, &reservation); err != nil {
-		BadRequest(w, r, "bad checkout JSON: %v", err)
-		return
-	}
-	if err := checkout(uuid, reservation.Label, reservation.Client, true); err != nil {
-		errorMsg := fmt.Sprintf("could not do checkout: %v (%s).", err, r.URL.Path)
-		log.Printf("ERROR: %s\n", errorMsg)
-		http.Error(w, errorMsg, http.StatusConflict)
-	}
-}
-
 func resetHandler(c web.C, w http.ResponseWriter, r *http.Request) {
 	uuid := c.URLParams["uuid"]
 
 	if err := reset(uuid, true); err != nil {
 		BadRequest(w, r, "unable to reset uuid %s: %v", uuid, err)
+	}
+}
+
+func historyHandler(c web.C, w http.ResponseWriter, r *http.Request) {
+	uuid := c.URLParams["uuid"]
+
+	if err := writeHx(uuid, w); err != nil {
+		BadRequest(w, r, "can't get history for uuid %s: %v", uuid, err)
+	}
+}
+
+func putCheckoutHandler(c web.C, w http.ResponseWriter, r *http.Request) {
+	uuid := c.URLParams["uuid"]
+	labelStr := c.URLParams["label"]
+	label, err := strconv.ParseUint(labelStr, 10, 64)
+	if err != nil {
+		BadRequest(w, r, "label %q cannot be parsed as 64-bit unsigned integer: %v", labelStr, err)
+		return
+	}
+	client := c.URLParams["client"]
+
+	if err := checkout(uuid, label, client, true); err != nil {
+		errorMsg := fmt.Sprintf("could not do checkout: %v (%s).", err, r.URL.Path)
+		log.Printf("ERROR: %s\n", errorMsg)
+		http.Error(w, errorMsg, http.StatusConflict)
 	}
 }
 
