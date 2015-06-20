@@ -90,7 +90,7 @@ GET  /checkout/{UUID}/{Label}
 		"Client": "katzw"
 	}
 
-	If not client has reserved that label, an empty JSON object "{}" is returned.
+	If no client has reserved that label, an empty JSON object "{}" is returned.
 
 PUT  /checkout/{UUID}/{Label}/{Client}
 
@@ -102,7 +102,7 @@ PUT  /checkin/{UUID}/{Label}/{Client}
 	Checks back in the given label/uuid.  The client id must match the id used to checkout the label.
 	If either the client id is incorrect or the given label/uuid was never checked out, a 400 status is returned.
 
- PUT  /reset/{UUID}
+PUT  /reset/{UUID}
 
  	Resets all reservations made for the given UUID.  Any checkouts will be deleted.
 
