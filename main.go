@@ -16,6 +16,10 @@ var (
 	// Run in verbose mode if true.
 	runVerbose = flag.Bool("verbose", false, "")
 
+	// Flag for clearing all locks at night.
+	dailyClear = flag.Bool("dailyclear", false, "")
+
+	// The HTTP address for help message and API
 	httpAddress = flag.String("http", DefaultWebAddress, "")
 )
 
@@ -27,8 +31,9 @@ recorded in a human-readable librarian log file.
 
 Usage: librarian [options] /path/to/librarian.log
 
-	  -http       =string   Address for HTTP communication.
-	  -verbose    (flag)    Run in verbose mode.
+      -http       =string   Address for HTTP communication.
+      -dailyclear (flag)    Clear all locks at 2 AM every night.
+      -verbose    (flag)    Run in verbose mode.
   -h, -help       (flag)    Show help message
 
 To get more information on the REST API, visit the http address with a web browser.

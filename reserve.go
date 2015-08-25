@@ -256,7 +256,7 @@ func checkout(uuid string, label uint64, clientid string, modifyLog bool) error 
 	return nil
 }
 
-func getUUIDs() (string, error) {
+func getUUIDs() []string {
 	library.RLock()
 	defer library.RUnlock()
 
@@ -266,6 +266,11 @@ func getUUIDs() (string, error) {
 		uuids[i] = uuid
 		i++
 	}
+	return uuids
+}
+
+func getUUIDsJSON() (string, error) {
+	uuids := getUUIDs()
 	jsonBytes, err := json.Marshal(uuids)
 	return string(jsonBytes), err
 }

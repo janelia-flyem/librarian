@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/janelia-flyem/go/cron"
+
 	"github.com/zenazn/goji/graceful"
 	"github.com/zenazn/goji/web"
 	"github.com/zenazn/goji/web/middleware"
@@ -156,12 +158,14 @@ type WebMux struct {
 }
 
 var (
-	webMux WebMux
+	webMux   WebMux
+	cronJobs *cron.Cron
 )
 
 func init() {
 	webMux.Mux = web.New()
 	webMux.Use(middleware.RequestID)
+	cronJobs = cron.New()
 }
 
 // ServeSingleHTTP fulfills one request using the default web Mux.
@@ -182,6 +186,12 @@ func serveHttp(address string) {
 		initRoutes()
 	}
 
+	// Setup any cron jobs
+	if *dailyClear {
+		cronJobs.AddFunc("0 0 2 * * *", resetLocks)
+	}
+	cronJobs.Start()
+
 	// Install our handler at the root of the standard net/http default mux.
 	// This allows packages like expvar to continue working as expected.  (From goji.go)
 	http.Handle("/", webMux)
@@ -191,6 +201,14 @@ func serveHttp(address string) {
 		log.Printf("CRITICAL: %v\n", err)
 	}
 	graceful.Wait()
+	cronJobs.Stop()
+}
+
+func resetLocks() {
+	modifyLog := true
+	for _, uuid := range getUUIDs() {
+		reset(uuid, modifyLog)
+	}
 }
 
 // High-level switchboard
@@ -298,7 +316,7 @@ func helpHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func uuidsHandler(w http.ResponseWriter, r *http.Request) {
-	jsonStr, err := getUUIDs()
+	jsonStr, err := getUUIDsJSON()
 	if err != nil {
 		BadRequest(w, r, "error marshaling JSON: %v", err)
 		return
