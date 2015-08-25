@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -190,6 +191,9 @@ func serveHttp(address string) {
 	if *dailyClear {
 		cronJobs.AddFunc("0 0 2 * * *", resetLocks)
 	}
+	if *backup != "" {
+		cronJobs.AddFunc("0 0 0 * * *", backupLog)
+	}
 	cronJobs.Start()
 
 	// Install our handler at the root of the standard net/http default mux.
@@ -209,6 +213,29 @@ func resetLocks() {
 	for _, uuid := range getUUIDs() {
 		reset(uuid, modifyLog)
 	}
+}
+
+func backupLog() {
+	in, err := os.OpenFile(library.fname, os.O_RDONLY, 0664)
+	if err != nil {
+		log.Printf("ERROR: cannot open librarian log file for backup: %v\n", err)
+		return
+	}
+	defer in.Close()
+
+	out, err := os.Create(*backup)
+	if err != nil {
+		log.Printf("ERROR: unable to open backup file %q: %v\n", *backup, err)
+		return
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, in)
+	if err != nil {
+		log.Printf("ERROR: during backup to %q: %v\n", *backup, err)
+		return
+	}
+	log.Printf("Created backup of librarian log from %q to %q\n", library.fname, *backup)
 }
 
 // High-level switchboard

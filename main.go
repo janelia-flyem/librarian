@@ -21,6 +21,9 @@ var (
 
 	// The HTTP address for help message and API
 	httpAddress = flag.String("http", DefaultWebAddress, "")
+
+	// If not empty, save log file here every midnight.
+	backup = flag.String("backup", "", "")
 )
 
 const helpMessage = `
@@ -32,6 +35,7 @@ recorded in a human-readable librarian log file.
 Usage: librarian [options] /path/to/librarian.log
 
       -http       =string   Address for HTTP communication.
+      -backup     =string   Daily (midnight) backup copies librarian log to this file.
       -dailyclear (flag)    Clear all locks at 2 AM every night.
       -verbose    (flag)    Run in verbose mode.
   -h, -help       (flag)    Show help message
