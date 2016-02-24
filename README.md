@@ -4,7 +4,7 @@ Get help by running the librarian and visiting its homepage with a web browser.
 
 ## Installing binary
 
-Go to the [Releases tab](https://github.com/janelia-flyem/librarian/releases) and download the appropriate executable.
+Go to the [Releases tab](https://github.com/janelia-flyem/librarian/releases) and download the appropriate executable.  You might have to add execution permissions.
 
 ## Installing from Source
 
