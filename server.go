@@ -415,7 +415,7 @@ func getCheckoutClientHandler(c web.C, w http.ResponseWriter, r *http.Request) {
 
 	client, found := getCheckout(uuid, label)
 	if !found {
-		BadRequest(w, r, "no checkout for uuid %s, label %d exists", uuid, label)
+		BadRequest(w, r, "no checkout exists for uuid %s, label %d", uuid, label)
 		return
 	}
 	jsonBytes, err := json.Marshal(reserveJSON{label, client})
